@@ -266,6 +266,10 @@ async def handle_checklist_answer(
                 "ada beberapa pertanyaan tambahan.",
                 parse_mode="Markdown",
             )
+
+            # Send the first STNK conditional question
+            from bot.handlers.stnk import send_next_stnk_question
+            await send_next_stnk_question(message, final_session)
         else:
             # stnk == "Baik" or not answered yet (shouldn't happen for complete checklist)
             # Transition to PHOTOS (Requirement 4.10)
@@ -295,6 +299,10 @@ async def handle_checklist_answer(
                 parse_mode="Markdown",
                 reply_markup=ReplyKeyboardRemove(),
             )
+
+            # Send the first photo prompt
+            from bot.handlers.photos import send_photo_prompt
+            await send_photo_prompt(message, final_session)
     else:
         # More questions to answer — display next question
         await _display_question(message, updated_session)

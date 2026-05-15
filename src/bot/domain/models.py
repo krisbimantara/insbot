@@ -103,7 +103,7 @@ _LAMPU_SEIN: tuple[str, ...] = (
     "sein_belakang",
 )
 
-# Kaki-kaki & Rem (14 fields)
+# Kaki-kaki & Rem (12 fields)
 _KAKI_REM: tuple[str, ...] = (
     "shock_belakang",
     "inner_tube_depan",
@@ -117,11 +117,9 @@ _KAKI_REM: tuple[str, ...] = (
     "tires_belakang",
     "velg_cw_depan",
     "velg_cw_belakang",
-    "velg_jarjari_depan",
-    "velg_jarjari_belakang",
 )
 
-# Aksesori & Kelengkapan (8 fields)
+# Aksesori & Kelengkapan (12 fields)
 _AKSESORI: tuple[str, ...] = (
     "kaca_spion",
     "tool_kit",
@@ -131,21 +129,23 @@ _AKSESORI: tuple[str, ...] = (
     "panel_instrumen_kiri",
     "jok_tempat_duduk",
     "behel_belakang",
-)
-
-# Kick & Pedal (4 fields)
-_KICK_PEDAL: tuple[str, ...] = (
-    "foot_step_depan",
-    "foot_step_belakang",
-    "kick_starter",
-    "pedal_gigi",
-)
-
-# Dokumen (STNK) (4 fields — includes pedal_rem and stnk)
-_DOKUMEN: tuple[str, ...] = (
-    "pedal_rem",
     "segitiga_atas",
     "segitiga_bawah",
+    "foot_step_depan",
+    "foot_step_belakang",
+)
+
+# Kick & Pedal (5 fields)
+_KICK_PEDAL: tuple[str, ...] = (
+    "kick_starter",
+    "pedal_gigi",
+    "pedal_rem",
+    "velg_jarjari_depan",
+    "velg_jarjari_belakang",
+)
+
+# Dokumen (STNK) (1 field)
+_DOKUMEN: tuple[str, ...] = (
     "stnk",
 )
 

@@ -28,9 +28,36 @@ from bot.adapters.redis_store import RedisSessionStore
 from bot.domain.fsm import transition_to_summary
 from bot.domain.models import PHOTO_FIELDS, Phase, Session
 
+from redis.exceptions import RedisError
+
 logger = logging.getLogger(__name__)
 
 router = Router(name="photos")
+
+
+# ---------------------------------------------------------------------------
+# Helper: find active PHOTOS session
+# ---------------------------------------------------------------------------
+
+
+async def _find_photos_session(
+    telegram_id: str,
+    store: RedisSessionStore,
+) -> Session | None:
+    """Find the active session in PHOTOS phase."""
+    try:
+        pending = await store.list_pending(telegram_id)
+    except RedisError:
+        return None
+
+    for motor_id in pending:
+        try:
+            session = await store.get_session(telegram_id, motor_id)
+        except RedisError:
+            continue
+        if session is not None and session.phase == Phase.PHOTOS:
+            return session
+    return None
 
 # ---------------------------------------------------------------------------
 # Callback data prefixes
@@ -155,13 +182,15 @@ def _is_phase_photos(session: Session | None) -> bool:
 async def handle_photo_message(
     message: Message,
     session_store: RedisSessionStore,
-    active_session: Session | None = None,
 ) -> None:
     """Handle photo message during PHOTOS phase (Requirement 6.4).
 
     Accepts the photo, saves file_id, and shows [Konfirmasi] [Foto Ulang].
     """
-    if active_session is None or active_session.phase != Phase.PHOTOS:
+    telegram_id = str(message.from_user.id)
+    active_session = await _find_photos_session(telegram_id, session_store)
+
+    if active_session is None:
         return  # Not in photos phase, let other handlers deal with it
 
     # Get the largest photo (last in the array)
@@ -192,13 +221,15 @@ async def handle_photo_message(
 async def handle_document_message(
     message: Message,
     session_store: RedisSessionStore,
-    active_session: Session | None = None,
 ) -> None:
     """Handle document message during PHOTOS phase.
 
     Accepts document-image (mime_type starts with "image/"), rejects non-image.
     """
-    if active_session is None or active_session.phase != Phase.PHOTOS:
+    telegram_id = str(message.from_user.id)
+    active_session = await _find_photos_session(telegram_id, session_store)
+
+    if active_session is None:
         return  # Not in photos phase
 
     document = message.document
@@ -237,13 +268,16 @@ async def handle_document_message(
 @router.message(F.video | F.sticker | F.animation | F.video_note | F.voice | F.audio)
 async def handle_non_image_message(
     message: Message,
-    active_session: Session | None = None,
+    session_store: RedisSessionStore,
 ) -> None:
     """Reject non-image media during PHOTOS phase (Requirement 6.7).
 
     Handles video, sticker, animation, video_note, voice, audio.
     """
-    if active_session is None or active_session.phase != Phase.PHOTOS:
+    telegram_id = str(message.from_user.id)
+    active_session = await _find_photos_session(telegram_id, session_store)
+
+    if active_session is None:
         return  # Not in photos phase
 
     await message.answer("Mohon kirim foto (JPG/PNG).")
@@ -258,7 +292,6 @@ async def handle_non_image_message(
 async def handle_photo_confirm(
     callback: CallbackQuery,
     session_store: RedisSessionStore,
-    active_session: Session | None = None,
 ) -> None:
     """Handle 'Konfirmasi' button tap (Requirement 6.6).
 
@@ -266,11 +299,11 @@ async def handle_photo_confirm(
     """
     from bot.session_middleware import check_session_expired
 
+    telegram_id = str(callback.from_user.id)
+    active_session = await _find_photos_session(telegram_id, session_store)
+
     if active_session is None:
         await check_session_expired(callback, active_session)
-        return
-    if active_session.phase != Phase.PHOTOS:
-        await callback.answer("Sesi tidak aktif.")
         return
 
     await callback.answer()
@@ -303,7 +336,6 @@ async def handle_photo_confirm(
 async def handle_photo_retry(
     callback: CallbackQuery,
     session_store: RedisSessionStore,
-    active_session: Session | None = None,
 ) -> None:
     """Handle 'Foto Ulang' button tap (Requirement 6.5).
 
@@ -311,11 +343,11 @@ async def handle_photo_retry(
     """
     from bot.session_middleware import check_session_expired
 
+    telegram_id = str(callback.from_user.id)
+    active_session = await _find_photos_session(telegram_id, session_store)
+
     if active_session is None:
         await check_session_expired(callback, active_session)
-        return
-    if active_session.phase != Phase.PHOTOS:
-        await callback.answer("Sesi tidak aktif.")
         return
 
     await callback.answer()

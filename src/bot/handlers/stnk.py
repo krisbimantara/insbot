@@ -35,7 +35,34 @@ from bot.domain.stnk import (
     validate_stnk_date,
 )
 
+from redis.exceptions import RedisError
+
 router = Router(name="stnk_conditional")
+
+
+# ---------------------------------------------------------------------------
+# Helper: find active STNK_CONDITIONAL session
+# ---------------------------------------------------------------------------
+
+
+async def _find_stnk_session(
+    telegram_id: str,
+    store: RedisSessionStore,
+) -> Session | None:
+    """Find the active session in STNK_CONDITIONAL phase."""
+    try:
+        pending = await store.list_pending(telegram_id)
+    except RedisError:
+        return None
+
+    for motor_id in pending:
+        try:
+            session = await store.get_session(telegram_id, motor_id)
+        except RedisError:
+            continue
+        if session is not None and session.phase == Phase.STNK_CONDITIONAL:
+            return session
+    return None
 
 # ---------------------------------------------------------------------------
 # Keyboard builders
@@ -114,11 +141,10 @@ async def send_next_stnk_question(message: Message, session: Session) -> None:
 # ---------------------------------------------------------------------------
 
 
-@router.message(F.text, flags={"phase": Phase.STNK_CONDITIONAL})
+@router.message(F.text)
 async def handle_stnk_conditional_text(
     message: Message,
     session_store: RedisSessionStore,
-    session: Session,
 ) -> None:
     """Handle text input during STNK_CONDITIONAL phase.
 
@@ -130,6 +156,13 @@ async def handle_stnk_conditional_text(
 
     Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8
     """
+    telegram_id = str(message.from_user.id)
+
+    # Find active STNK_CONDITIONAL session
+    session = await _find_stnk_session(telegram_id, session_store)
+    if session is None:
+        return  # Not in STNK phase, let other handlers deal with it
+
     text = message.text.strip() if message.text else ""
 
     # Get the current question
@@ -144,6 +177,9 @@ async def handle_stnk_conditional_text(
             "Selanjutnya: pengambilan foto.",
             reply_markup=ReplyKeyboardRemove(),
         )
+        # Send the first photo prompt
+        from bot.handlers.photos import send_photo_prompt
+        await send_photo_prompt(message, updated)
         return
 
     # --- Process the answer based on field type ---
@@ -200,6 +236,9 @@ async def handle_stnk_conditional_text(
             "Selanjutnya: pengambilan foto.",
             reply_markup=ReplyKeyboardRemove(),
         )
+        # Send the first photo prompt
+        from bot.handlers.photos import send_photo_prompt
+        await send_photo_prompt(message, final_session)
     else:
         # Send the next question
         await send_next_stnk_question(message, updated_session)

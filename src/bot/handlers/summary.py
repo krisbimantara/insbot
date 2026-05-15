@@ -271,16 +271,15 @@ async def _find_active_session(
 async def handle_revisi_kategori(
     callback: CallbackQuery,
     session_store: RedisSessionStore,
-    active_session: Session | None = None,
 ) -> None:
     """Handle 'Revisi Kategori' tap: show 8 categories as Inline Keyboard (Requirement 7.2)."""
     from bot.session_middleware import check_session_expired
 
+    telegram_id = str(callback.from_user.id)
+    active_session = await _find_active_session(telegram_id, session_store, (Phase.SUMMARY,))
+
     if active_session is None:
         await check_session_expired(callback, active_session)
-        return
-    if active_session.phase != Phase.SUMMARY:
-        await callback.answer("Sesi tidak aktif.")
         return
 
     await callback.answer()
@@ -302,7 +301,6 @@ async def handle_revisi_kategori(
 async def handle_kategori_select(
     callback: CallbackQuery,
     session_store: RedisSessionStore,
-    active_session: Session | None = None,
 ) -> None:
     """Handle category selection: set mode=revisi, show first component (Requirement 7.3).
 
@@ -311,11 +309,11 @@ async def handle_kategori_select(
     """
     from bot.session_middleware import check_session_expired
 
+    telegram_id = str(callback.from_user.id)
+    active_session = await _find_active_session(telegram_id, session_store, (Phase.SUMMARY,))
+
     if active_session is None:
         await check_session_expired(callback, active_session)
-        return
-    if active_session.phase != Phase.SUMMARY:
-        await callback.answer("Sesi tidak aktif.")
         return
 
     await callback.answer()

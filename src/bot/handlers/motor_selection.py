@@ -323,6 +323,39 @@ async def handle_lanjutkan_sesi(
             text += f"Kategori: {session.current_category}\n"
         await callback.message.answer(text, parse_mode="Markdown")  # type: ignore[union-attr]
 
+        # Send the appropriate prompt based on current phase
+        if session.phase == Phase.CHECKLIST:
+            from bot.domain.checklist import next_question as get_next_q
+            from bot.domain.progress import compute_overall_progress, render_progress_bar
+            from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+
+            question = get_next_q(session)
+            if hasattr(question, "field"):
+                done, total = compute_overall_progress(session)
+                progress_bar = render_progress_bar(done, total)
+                category = session.current_category or ""
+                buttons = [[KeyboardButton(text=opt) for opt in question.options]]
+                keyboard = ReplyKeyboardMarkup(
+                    keyboard=buttons, one_time_keyboard=True, resize_keyboard=True,
+                )
+                await callback.message.answer(  # type: ignore[union-attr]
+                    f"📋 *{category}*\n\n"
+                    f"Komponen: *{question.label}*\n\n"
+                    f"Progress: {progress_bar}",
+                    parse_mode="Markdown",
+                    reply_markup=keyboard,
+                )
+        elif session.phase == Phase.STNK_CONDITIONAL:
+            from bot.handlers.stnk import send_next_stnk_question
+            # send_next_stnk_question expects a Message, use callback.message
+            await send_next_stnk_question(callback.message, session)  # type: ignore[arg-type]
+        elif session.phase == Phase.PHOTOS:
+            from bot.handlers.photos import send_photo_prompt
+            await send_photo_prompt(callback, session)
+        elif session.phase == Phase.SUMMARY:
+            from bot.handlers.summary import send_summary
+            await send_summary(callback, session)
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith(CB_MULAI_ULANG))
 async def handle_mulai_ulang(
@@ -425,18 +458,44 @@ async def handle_mulai_inspeksi(
 
     # Transition to CHECKLIST phase using FSM
     from bot.domain.fsm import transition_to_checklist
+    from bot.domain.checklist import next_question
+    from bot.domain.progress import compute_overall_progress, render_progress_bar
 
     updated_session = transition_to_checklist(session)
     await session_store.save_session(updated_session)
 
     await callback.answer()
+
+    # Send first question directly with Reply Keyboard
+    from bot.domain.models import COMPONENT_OPTIONS
+    from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+
+    question = next_question(updated_session)
+    first_category = CATEGORIES[0]
+
     if callback.message:
-        first_category = CATEGORIES[0]
-        first_field = CATEGORY_FIELDS[first_category][0]
+        # Announce inspection start
         await callback.message.answer(  # type: ignore[union-attr]
             f"✅ Inspeksi dimulai untuk *{updated_session.motor_meta.nopol}*\n\n"
-            f"Kategori: *{first_category}*\n"
-            f"Komponen pertama: {first_field}\n\n"
-            f"Silakan jawab pertanyaan yang akan muncul.",
+            f"Kategori: *{first_category}*",
             parse_mode="Markdown",
         )
+
+        # Send first question with Reply Keyboard
+        if not isinstance(question, str) and hasattr(question, "field"):
+            done, total = compute_overall_progress(updated_session)
+            progress_bar = render_progress_bar(done, total)
+            options = question.options
+            buttons = [[KeyboardButton(text=opt) for opt in options]]
+            keyboard = ReplyKeyboardMarkup(
+                keyboard=buttons,
+                one_time_keyboard=True,
+                resize_keyboard=True,
+            )
+            await callback.message.answer(  # type: ignore[union-attr]
+                f"📋 *{first_category}*\n\n"
+                f"Komponen: *{question.label}*\n\n"
+                f"Progress: {progress_bar}",
+                parse_mode="Markdown",
+                reply_markup=keyboard,
+            )
