@@ -57,6 +57,7 @@ router = Router(name="summary")
 CB_REVISI_KATEGORI = "revisi_kategori"
 CB_KATEGORI_SELECT = "kategori_select:"
 CB_KIRIM_HASIL = "kirim_hasil"
+CB_LENGKAPI_FOTO = "lengkapi_foto"
 
 
 # ---------------------------------------------------------------------------
@@ -97,22 +98,32 @@ def _build_summary_text(session: Session) -> str:
     return "\n".join(lines)
 
 
-def _build_summary_keyboard() -> InlineKeyboardMarkup:
-    """Build Inline Keyboard with [Revisi Kategori] and [Kirim Hasil] (Requirement 7.1)."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="Revisi Kategori",
-                    callback_data=CB_REVISI_KATEGORI,
-                ),
-                InlineKeyboardButton(
-                    text="Kirim Hasil",
-                    callback_data=CB_KIRIM_HASIL,
-                ),
-            ]
+def _build_summary_keyboard(session: Session) -> InlineKeyboardMarkup:
+    """Build Inline Keyboard with [Revisi Kategori], [Lengkapi Foto], and [Kirim Hasil]."""
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text="Revisi Kategori",
+                callback_data=CB_REVISI_KATEGORI,
+            ),
+            InlineKeyboardButton(
+                text="Kirim Hasil",
+                callback_data=CB_KIRIM_HASIL,
+            ),
         ]
-    )
+    ]
+
+    # Add "Lengkapi Foto" button if photos are incomplete
+    photo_done = sum(1 for f in PHOTO_FIELDS if f in session.photos)
+    if photo_done < 10:
+        buttons.insert(0, [
+            InlineKeyboardButton(
+                text=f"📷 Lengkapi Foto ({photo_done}/10)",
+                callback_data=CB_LENGKAPI_FOTO,
+            )
+        ])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def _build_category_selection_keyboard() -> InlineKeyboardMarkup:
@@ -154,7 +165,7 @@ async def send_summary(target: Message | CallbackQuery, session: Session) -> Non
     Can be called from both Message and CallbackQuery contexts.
     """
     text = _build_summary_text(session)
-    keyboard = _build_summary_keyboard()
+    keyboard = _build_summary_keyboard(session)
 
     if isinstance(target, CallbackQuery):
         if target.message is not None:
@@ -265,6 +276,48 @@ async def _find_active_session(
 # ---------------------------------------------------------------------------
 # Callback handler: "Revisi Kategori" button
 # ---------------------------------------------------------------------------
+
+
+@router.callback_query(lambda c: c.data == CB_LENGKAPI_FOTO)
+async def handle_lengkapi_foto(
+    callback: CallbackQuery,
+    session_store: RedisSessionStore,
+) -> None:
+    """Handle 'Lengkapi Foto' button tap.
+
+    Finds the first missing photo and transitions session to PHOTOS phase
+    at that index, then sends the photo prompt.
+    """
+    from bot.session_middleware import check_session_expired
+
+    telegram_id = str(callback.from_user.id)
+    active_session = await _find_active_session(telegram_id, session_store, (Phase.SUMMARY,))
+
+    if active_session is None:
+        await check_session_expired(callback, active_session)
+        return
+
+    await callback.answer()
+
+    # Find the first missing photo index
+    first_missing_index = 0
+    for i, field in enumerate(PHOTO_FIELDS):
+        if field not in active_session.photos:
+            first_missing_index = i
+            break
+
+    # Transition to PHOTOS phase at the missing index
+    updated_session = active_session.model_copy(
+        update={
+            "phase": Phase.PHOTOS,
+            "photo_index": first_missing_index,
+        }
+    )
+    await session_store.save_session(updated_session)
+
+    # Send the photo prompt
+    from bot.handlers.photos import send_photo_prompt
+    await send_photo_prompt(callback, updated_session)
 
 
 @router.callback_query(lambda c: c.data == CB_REVISI_KATEGORI)

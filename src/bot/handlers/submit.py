@@ -341,8 +341,11 @@ async def _handle_pre_submit_error(
 ) -> None:
     """Handle pre-submit validation failure (Requirement 8.2)."""
     field_lines = []
+    has_missing_photos = False
     for err in error.errors[:10]:
         field_lines.append(f"• {err.field}: {err.reason}")
+        if err.reason == "missing_photo":
+            has_missing_photos = True
     if len(error.errors) > 10:
         field_lines.append(f"... dan {len(error.errors) - 10} lainnya")
 
@@ -353,7 +356,16 @@ async def _handle_pre_submit_error(
         + "\n\nSilakan lengkapi data terlebih dahulu."
     )
 
-    if callback.message:
+    # Add "Lengkapi Foto" button if there are missing photos
+    if has_missing_photos and callback.message:
+        from bot.handlers.summary import CB_LENGKAPI_FOTO
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="📷 Lengkapi Foto", callback_data=CB_LENGKAPI_FOTO)]
+            ]
+        )
+        await callback.message.answer(text, reply_markup=keyboard)  # type: ignore[union-attr]
+    elif callback.message:
         await callback.message.answer(text)  # type: ignore[union-attr]
 
 
