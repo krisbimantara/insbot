@@ -240,6 +240,8 @@ async def _background_submit(
         )
         return
     except FrappeValidationError as e:
+        # Restore session to SUMMARY so user can retry
+        await session_store.save_session(session)
         await bot.send_message(
             chat_id=chat_id,
             text=(
@@ -262,6 +264,8 @@ async def _background_submit(
         )
         return
     except FrappeUnavailable:
+        # Restore session to SUMMARY so user can retry
+        await session_store.save_session(session)
         await bot.send_message(
             chat_id=chat_id,
             text=(
@@ -274,6 +278,8 @@ async def _background_submit(
         return
     except Exception as e:
         logger.exception("background_submit_unexpected_error")
+        # Restore session to SUMMARY so user can retry
+        await session_store.save_session(session)
         await bot.send_message(
             chat_id=chat_id,
             text=(
