@@ -10,8 +10,6 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
-      # Frappe frontend (Nginx) handles site routing
-      - FRAPPE_URL=http://frontend:8080
     ports:
       - "8443:8443"
     networks:
