@@ -126,7 +126,7 @@ async def _submit_inspection(
         try:
             logger.info("submit_attempt", extra={"attempt": attempt + 1})
             result = await frappe.submit_hasil_inspeksi(payload, idempotency_key=idem_key)
-            logger.info("submit_success", extra={"name": result.name})
+            logger.info("submit_success", extra={"doc_name": result.name})
             return result
         except FrappeValidationError as e:
             logger.error("submit_validation_error", extra={"error_msg": e.message, "attempt": attempt + 1})
