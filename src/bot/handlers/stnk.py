@@ -110,7 +110,7 @@ async def send_next_stnk_question(message: Message, session: Session) -> None:
     relevant = stnk_relevant_fields(session.stnk_answer)
     total = len(relevant)
     done = sum(1 for f in relevant if f in session.answers)
-    progress_bar = render_progress_bar(done, total)
+    progress_bar = render_progress_bar(done, total, width=total)
 
     label = STNK_FIELD_LABELS.get(question.field, question.field)
 
@@ -120,7 +120,7 @@ async def send_next_stnk_question(message: Message, session: Session) -> None:
         text = (
             f"📋 *Pertanyaan STNK Tambahan*\n\n"
             f"{label}\n"
-            f"{progress_bar} {done}/{total}\n\n"
+            f"{progress_bar}\n\n"
             f"Pilih jawaban:"
         )
     else:
@@ -129,7 +129,7 @@ async def send_next_stnk_question(message: Message, session: Session) -> None:
         text = (
             f"📋 *Pertanyaan STNK Tambahan*\n\n"
             f"{label}\n"
-            f"{progress_bar} {done}/{total}\n\n"
+            f"{progress_bar}\n\n"
             f"Masukkan tanggal format YYYY-MM-DD atau tekan Skip:"
         )
 
@@ -141,7 +141,6 @@ async def send_next_stnk_question(message: Message, session: Session) -> None:
 # ---------------------------------------------------------------------------
 
 
-@router.message(F.text)
 async def handle_stnk_conditional_text(
     message: Message,
     session_store: RedisSessionStore,

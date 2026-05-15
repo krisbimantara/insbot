@@ -323,6 +323,10 @@ async def handle_photo_confirm(
                 "Melanjutkan ke *Ringkasan Inspeksi*...",
                 parse_mode="Markdown",
             )
+
+            # Send the summary page with buttons
+            from bot.handlers.summary import send_summary
+            await send_summary(callback, updated_session)
     else:
         # Advance to next photo (Requirement 6.6)
         updated_session = active_session.model_copy(update={"photo_index": new_index})

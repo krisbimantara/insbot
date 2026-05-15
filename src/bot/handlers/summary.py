@@ -350,7 +350,6 @@ async def handle_kategori_select(
 # ---------------------------------------------------------------------------
 
 
-@router.message(F.text)
 async def handle_revision_answer(
     message: Message,
     session_store: RedisSessionStore,

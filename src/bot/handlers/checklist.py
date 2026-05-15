@@ -154,7 +154,6 @@ async def _display_category_transition(
 # ---------------------------------------------------------------------------
 
 
-@router.message(F.text)
 async def handle_checklist_answer(
     message: Message,
     session_store: RedisSessionStore,

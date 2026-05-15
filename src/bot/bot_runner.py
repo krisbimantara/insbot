@@ -27,6 +27,7 @@ from bot.handlers.photos import router as photos_router
 from bot.handlers.stnk import router as stnk_router
 from bot.handlers.submit import router as submit_router
 from bot.handlers.summary import router as summary_router
+from bot.handlers.text_router import router as text_router
 from bot.logging import configure_logging, get_logger
 from bot.webhook import create_webhook_app
 
@@ -69,9 +70,10 @@ async def run() -> None:
     # 8. Register all handler routers
     dp.include_router(commands_router)
     dp.include_router(motor_selection_router)
+    dp.include_router(text_router)
+    dp.include_router(photos_router)
     dp.include_router(checklist_router)
     dp.include_router(stnk_router)
-    dp.include_router(photos_router)
     dp.include_router(summary_router)
     dp.include_router(submit_router)
 
