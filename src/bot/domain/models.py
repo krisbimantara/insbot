@@ -51,7 +51,7 @@ CATEGORIES: tuple[str, ...] = (
 # Grouped by category for readability; the flat tuple preserves that order.
 # ---------------------------------------------------------------------------
 
-# Body & Rangka (10 fields)
+# Body & Rangka (9 fields)
 _BODY_RANGKA: tuple[str, ...] = (
     "kepala",
     "sayap_dalam",
@@ -62,11 +62,11 @@ _BODY_RANGKA: tuple[str, ...] = (
     "spakboard_belakang",
     "leher_angsa",
     "list_grafis",
-    "crankcase_assy",
 )
 
-# Mesin (12 fields)
+# Mesin (13 fields)
 _MESIN: tuple[str, ...] = (
+    "crankcase_assy",
     "head_cylinder",
     "cylinder",
     "carburator_assy",
@@ -103,7 +103,7 @@ _LAMPU_SEIN: tuple[str, ...] = (
     "sein_belakang",
 )
 
-# Kaki-kaki & Rem (12 fields)
+# Kaki-kaki & Rem (14 fields)
 _KAKI_REM: tuple[str, ...] = (
     "shock_belakang",
     "inner_tube_depan",
@@ -117,6 +117,8 @@ _KAKI_REM: tuple[str, ...] = (
     "tires_belakang",
     "velg_cw_depan",
     "velg_cw_belakang",
+    "velg_jarjari_depan",
+    "velg_jarjari_belakang",
 )
 
 # Aksesori & Kelengkapan (12 fields)
@@ -135,13 +137,11 @@ _AKSESORI: tuple[str, ...] = (
     "foot_step_belakang",
 )
 
-# Kick & Pedal (5 fields)
+# Kick & Pedal (3 fields)
 _KICK_PEDAL: tuple[str, ...] = (
     "kick_starter",
     "pedal_gigi",
     "pedal_rem",
-    "velg_jarjari_depan",
-    "velg_jarjari_belakang",
 )
 
 # Dokumen (STNK) (1 field)
