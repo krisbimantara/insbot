@@ -90,6 +90,15 @@ class FrappeClient:
             raise FrappeNotFound(message)
 
         if status in (400, 417) or exc_type == "ValidationError":
+            logger.error(
+                "frappe_validation_error",
+                extra={
+                    "status": status,
+                    "exc_type": exc_type,
+                    "message": message,
+                    "body": str(body)[:500],
+                },
+            )
             raise FrappeValidationError(message)
 
         if status >= 500:
@@ -232,6 +241,18 @@ class FrappeClient:
         }
 
         body = payload.model_dump(mode="json")
+
+        logger.info(
+            "submit_payload",
+            extra={
+                "motor_tarikan": payload.motor_tarikan,
+                "telegram_id": payload.telegram_id,
+                "tipe_inspeksi": payload.tipe_inspeksi,
+                "komponen_count": len(payload.komponen),
+                "foto_urls_count": len(payload.foto_urls),
+                "komponen_keys": sorted(payload.komponen.keys()),
+            },
+        )
 
         try:
             async with aiohttp.ClientSession(timeout=self._timeout) as session:
