@@ -140,7 +140,7 @@ async def show_motor_list(
     keyboard = _build_motor_list_keyboard(motors)
     await _send_text(
         callback_or_message,
-        "📋 *Daftar Motor Pending*\n\nPilih motor untuk diinspeksi:",
+        "📋 Daftar Motor Pending\n\nPilih motor untuk diinspeksi:",
         reply_markup=keyboard,
     )
 
@@ -152,12 +152,12 @@ async def _send_text(target, text: str, **kwargs) -> None:
     if isinstance(target, CallbackQuery):
         await target.answer()
         if target.message is not None:
-            await target.message.answer(text, parse_mode="Markdown", **kwargs)  # type: ignore[union-attr]
+            await target.message.answer(text, **kwargs)  # type: ignore[union-attr]
     elif isinstance(target, Message):
-        await target.answer(text, parse_mode="Markdown", **kwargs)
+        await target.answer(text, **kwargs)
     else:
         # Fallback: try answer method
-        await target.answer(text, parse_mode="Markdown", **kwargs)
+        await target.answer(text, **kwargs)
 
 
 # ---------------------------------------------------------------------------

@@ -306,6 +306,23 @@ async def handle_photo_confirm(
         await check_session_expired(callback, active_session)
         return
 
+    # Validate that the callback index matches the current photo_index
+    try:
+        cb_index = int(callback.data[len(CB_PHOTO_CONFIRM):])  # type: ignore[index]
+    except (ValueError, TypeError):
+        await callback.answer("Tombol tidak valid.")
+        return
+
+    if cb_index != active_session.photo_index:
+        await callback.answer("Foto ini sudah dikonfirmasi.")
+        return
+
+    # Verify that a photo was actually saved for this index
+    field = PHOTO_FIELDS[active_session.photo_index]
+    if field not in active_session.photos:
+        await callback.answer("Kirim foto terlebih dahulu.")
+        return
+
     await callback.answer()
 
     new_index = active_session.photo_index + 1
@@ -352,6 +369,17 @@ async def handle_photo_retry(
 
     if active_session is None:
         await check_session_expired(callback, active_session)
+        return
+
+    # Validate that the callback index matches the current photo_index
+    try:
+        cb_index = int(callback.data[len(CB_PHOTO_RETRY):])  # type: ignore[index]
+    except (ValueError, TypeError):
+        await callback.answer("Tombol tidak valid.")
+        return
+
+    if cb_index != active_session.photo_index:
+        await callback.answer("Foto ini sudah diproses.")
         return
 
     await callback.answer()

@@ -30,7 +30,7 @@ async def _find_active_session_any_phase(
     telegram_id: str,
     store: RedisSessionStore,
 ) -> Session | None:
-    """Find any active session for the user (any phase)."""
+    """Find any active session for the user (text-input phases only)."""
     try:
         pending = await store.list_pending(telegram_id)
     except RedisError:
@@ -50,6 +50,27 @@ async def _find_active_session_any_phase(
     return None
 
 
+async def _find_session_in_phase(
+    telegram_id: str,
+    store: RedisSessionStore,
+    phase: Phase,
+) -> Session | None:
+    """Find a session in a specific phase."""
+    try:
+        pending = await store.list_pending(telegram_id)
+    except RedisError:
+        return None
+
+    for motor_id in pending:
+        try:
+            session = await store.get_session(telegram_id, motor_id)
+        except RedisError:
+            continue
+        if session is not None and session.phase == phase:
+            return session
+    return None
+
+
 @router.message(F.text)
 async def handle_text_by_phase(
     message: Message,
@@ -60,6 +81,10 @@ async def handle_text_by_phase(
 
     session = await _find_active_session_any_phase(telegram_id, session_store)
     if session is None:
+        # Check if user is in PHOTOS phase — inform them to send a photo
+        photos_session = await _find_session_in_phase(telegram_id, session_store, Phase.PHOTOS)
+        if photos_session is not None:
+            await message.answer("📷 Kirim foto untuk melanjutkan. Teks tidak diterima pada tahap ini.")
         return  # No active text-input session, ignore
 
     if session.phase == Phase.CHECKLIST:
