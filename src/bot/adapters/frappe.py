@@ -97,7 +97,7 @@ class FrappeClient:
                 extra={
                     "status": status,
                     "exc_type": exc_type,
-                    "message": message,
+                    "error_msg": message,
                     "body": str(body)[:500],
                 },
             )

@@ -129,12 +129,12 @@ async def _submit_inspection(
             logger.info("submit_success", extra={"name": result.name})
             return result
         except FrappeValidationError as e:
-            logger.error("submit_validation_error", extra={"message": e.message, "attempt": attempt + 1})
+            logger.error("submit_validation_error", extra={"error_msg": e.message, "attempt": attempt + 1})
             if e.indicates_already_completed():  # Requirement 8.9
                 return SubmitResult.synthetic_success_already_completed()
             raise
         except FrappeUnavailable as e:
-            logger.warning("submit_unavailable", extra={"message": str(e), "attempt": attempt + 1})
+            logger.warning("submit_unavailable", extra={"error_msg": str(e), "attempt": attempt + 1})
             last_exc = e
             if attempt < 3:
                 await asyncio.sleep(_BACKOFFS[attempt])
