@@ -101,6 +101,9 @@ class FrappeClient:
                     "body": str(body)[:500],
                 },
             )
+            # Also print to ensure visibility in docker logs
+            print(f"[FRAPPE_VALIDATION_ERROR] status={status} exc_type={exc_type} message={message}")
+            print(f"[FRAPPE_VALIDATION_ERROR] body={str(body)[:1000]}")
             raise FrappeValidationError(message)
 
         if status >= 500:
