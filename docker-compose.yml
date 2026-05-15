@@ -1,0 +1,31 @@
+services:
+  bot:
+    build: .
+    container_name: inspection-bot
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - "8443:8443"
+
+  redis:
+    image: redis:7-alpine
+    container_name: inspection-bot-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  redis-data:
