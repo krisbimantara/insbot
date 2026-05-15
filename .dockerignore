@@ -29,5 +29,7 @@ conftest.py
 # Environment files (secrets)
 .env
 
-# Documentation
-*.md
+# Documentation (keep README.md for pyproject.toml)
+DEPLOY.md
+API_DOCUMENTATION.md
+PRD_Sistem_Inspeksi_Kendaraan.md
