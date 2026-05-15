@@ -186,9 +186,8 @@ async def handle_kirim_hasil(
     # Immediately reply — inspector can continue working
     if callback.message:
         await callback.message.answer(  # type: ignore[union-attr]
-            f"⏳ Mengirim hasil inspeksi untuk *{session.motor_meta.nopol}*...\n\n"
+            f"⏳ Mengirim hasil inspeksi untuk {session.motor_meta.nopol}...\n\n"
             "Anda bisa melanjutkan ke motor berikutnya (jika ada).",
-            parse_mode="Markdown",
         )
 
     # Auto-show motor list so inspector can continue immediately
@@ -219,6 +218,8 @@ async def _background_submit(
     chat_id: int,
 ) -> None:
     """Run the submission pipeline in the background and notify the user."""
+    nopol = session.motor_meta.nopol
+
     try:
         result = await _submit_inspection(
             session,
@@ -232,11 +233,10 @@ async def _background_submit(
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                f"⚠️ *Pengiriman gagal — {session.motor_meta.nopol}*\n\n"
+                f"⚠️ Pengiriman gagal - {nopol}\n\n"
                 "Motor sudah dialihkan atau status berubah.\n"
                 "Ketik /mulai untuk melihat daftar motor terbaru."
             ),
-            parse_mode="Markdown",
         )
         return
     except FrappeValidationError as e:
@@ -245,11 +245,10 @@ async def _background_submit(
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                f"❌ *Pengiriman gagal — {session.motor_meta.nopol}*\n\n"
+                f"❌ Pengiriman gagal - {nopol}\n\n"
                 f"Server menolak: {e.message}\n\n"
                 "Tekan Kirim Hasil lagi untuk mencoba ulang."
             ),
-            parse_mode="Markdown",
         )
         return
     except FrappePermissionError:
@@ -257,10 +256,9 @@ async def _background_submit(
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                f"🚫 *Akses ditolak — {session.motor_meta.nopol}*\n\n"
+                f"🚫 Akses ditolak - {nopol}\n\n"
                 "Hubungi admin."
             ),
-            parse_mode="Markdown",
         )
         return
     except FrappeUnavailable:
@@ -269,11 +267,10 @@ async def _background_submit(
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                f"❌ *Gagal mengirim — {session.motor_meta.nopol}*\n\n"
+                f"❌ Gagal mengirim - {nopol}\n\n"
                 "Server tidak merespons setelah beberapa percobaan.\n"
                 "Tekan Kirim Hasil lagi untuk mencoba ulang."
             ),
-            parse_mode="Markdown",
         )
         return
     except Exception as e:
@@ -283,10 +280,9 @@ async def _background_submit(
         await bot.send_message(
             chat_id=chat_id,
             text=(
-                f"❌ *Error tidak terduga — {session.motor_meta.nopol}*\n\n"
+                f"❌ Error tidak terduga - {nopol}\n\n"
                 "Silakan coba lagi atau hubungi admin."
             ),
-            parse_mode="Markdown",
         )
         return
 
@@ -305,15 +301,15 @@ async def _background_submit(
 
     if result.already_completed:
         text = (
-            f"✅ *Inspeksi sudah tercatat — {session.motor_meta.nopol}*\n\n"
+            f"✅ Inspeksi sudah tercatat - {nopol}\n\n"
             "Status: Selesai"
         )
     else:
-        doc_name = result.name or "—"
+        doc_name = result.name or "-"
         text = (
-            f"✅ *Hasil inspeksi berhasil dikirim!*\n\n"
-            f"Motor: {session.motor_meta.nopol}\n"
-            f"Dokumen: `{doc_name}`"
+            f"✅ Hasil inspeksi berhasil dikirim!\n\n"
+            f"Motor: {nopol}\n"
+            f"Dokumen: {doc_name}"
         )
 
     keyboard = InlineKeyboardMarkup(
@@ -330,7 +326,6 @@ async def _background_submit(
     await bot.send_message(
         chat_id=chat_id,
         text=text,
-        parse_mode="Markdown",
         reply_markup=keyboard,
     )
 
@@ -352,14 +347,14 @@ async def _handle_pre_submit_error(
         field_lines.append(f"... dan {len(error.errors) - 10} lainnya")
 
     text = (
-        "❌ *Data belum lengkap*\n\n"
+        "❌ Data belum lengkap\n\n"
         "Field yang belum terisi:\n"
         + "\n".join(field_lines)
         + "\n\nSilakan lengkapi data terlebih dahulu."
     )
 
     if callback.message:
-        await callback.message.answer(text, parse_mode="Markdown")  # type: ignore[union-attr]
+        await callback.message.answer(text)  # type: ignore[union-attr]
 
 
 async def _find_summary_session(
