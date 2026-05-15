@@ -31,7 +31,6 @@ from bot.adapters.exceptions import (
 )
 from bot.adapters.frappe import FrappeClient
 from bot.adapters.photos import (
-    compress_if_needed,
     download_telegram_photo,
     get_photo_filename,
 )
@@ -104,14 +103,8 @@ async def _submit_inspection(
         logger.info("photo_upload_start", extra={"field": field, "index": i + 1})
         raw = await download_telegram_photo(bot, file_id)
         logger.info("photo_downloaded", extra={"field": field, "size_bytes": len(raw)})
-        compressed = compress_if_needed(
-            raw,
-            max_bytes=settings.photo_max_bytes,
-            longest_edge=settings.photo_compress_target_longest_edge,
-        )
-        logger.info("photo_compressed", extra={"field": field, "size_bytes": len(compressed)})
         filename = get_photo_filename(field, session.motor_id)
-        url = await frappe.upload_foto(compressed, filename=filename)
+        url = await frappe.upload_foto(raw, filename=filename)
         foto_urls[field] = url
         logger.info("photo_uploaded", extra={"field": field, "url": url})
 
