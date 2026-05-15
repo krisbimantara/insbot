@@ -36,7 +36,7 @@ from bot.adapters.photos import (
 )
 from bot.adapters.redis_store import RedisSessionStore
 from bot.config import Settings
-from bot.domain.models import PHOTO_FIELDS, Session, SubmitResult
+from bot.domain.models import PHOTO_FIELDS, Phase, Session, SubmitResult
 from bot.domain.payload import build_idempotency_key, build_submit_payload
 from bot.domain.validation import validate_pre_submit
 
@@ -167,7 +167,8 @@ async def handle_kirim_hasil(
     if session is None:
         if callback.message:
             await callback.message.answer(  # type: ignore[union-attr]
-                "Sesi inspeksi telah berakhir. Silakan ketik /mulai untuk memulai ulang."
+                "Inspeksi ini sudah dikirim atau sesi telah berakhir.\n"
+                "Ketik /mulai untuk melihat daftar motor."
             )
         return
 
@@ -177,14 +178,22 @@ async def handle_kirim_hasil(
         await _handle_pre_submit_error(callback, PreSubmitValidationError(errors))
         return
 
+    # Mark session as submitting to prevent double-click
+    # (delete session from SUMMARY phase so second click won't find it)
+    submitting_session = session.model_copy(update={"phase": Phase.IDLE})
+    await session_store.save_session(submitting_session)
+
     # Immediately reply — inspector can continue working
     if callback.message:
         await callback.message.answer(  # type: ignore[union-attr]
             f"⏳ Mengirim hasil inspeksi untuk *{session.motor_meta.nopol}*...\n\n"
-            "Anda bisa melanjutkan ke motor berikutnya. "
-            "Kami akan kabari hasilnya.",
+            "Anda bisa melanjutkan ke motor berikutnya (jika ada).",
             parse_mode="Markdown",
         )
+
+    # Auto-show motor list so inspector can continue immediately
+    from bot.handlers.motor_selection import show_motor_list
+    await show_motor_list(callback, telegram_id, frappe_client, session_store)
 
     # Launch background task
     bot = callback.bot
