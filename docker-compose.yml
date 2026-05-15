@@ -40,3 +40,4 @@ networks:
     driver: bridge
   frappe_network:
     external: true
+    name: frappe_docker_frappe_network
