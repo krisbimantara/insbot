@@ -109,6 +109,10 @@ async def run() -> None:
             port=settings.webhook_port,
         )
 
+        # Delete any existing Telegram webhook before starting polling
+        await bot.delete_webhook(drop_pending_updates=False)
+        log.info("telegram_webhook_deleted")
+
         # Start polling in background
         polling_task = asyncio.create_task(
             dp.start_polling(bot, handle_signals=False)
