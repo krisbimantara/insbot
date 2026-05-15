@@ -44,6 +44,8 @@ class FrappeClient:
         self._api_key = settings.frappe_api_key.get_secret_value()
         self._api_secret = settings.frappe_api_secret.get_secret_value()
         self._timeout = aiohttp.ClientTimeout(total=settings.frappe_request_timeout_seconds)
+        # Longer timeout for file uploads (photos can be large)
+        self._upload_timeout = aiohttp.ClientTimeout(total=120)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -176,7 +178,7 @@ class FrappeClient:
         form.add_field("filename", filename)
 
         try:
-            async with aiohttp.ClientSession(timeout=self._timeout) as session:
+            async with aiohttp.ClientSession(timeout=self._upload_timeout) as session:
                 async with session.post(url, headers=headers, data=form) as response:
                     if response.status != 200:
                         await self._raise_for_frappe_error(response)

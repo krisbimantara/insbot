@@ -99,32 +99,42 @@ async def _submit_inspection(
 
     # Step 2: Upload 10 photos serially (Requirement 8.3)
     foto_urls: dict[str, str] = {}
-    for field in PHOTO_FIELDS:
+    for i, field in enumerate(PHOTO_FIELDS):
         file_id = session.photos[field]
+        logger.info("photo_upload_start", extra={"field": field, "index": i + 1})
         raw = await download_telegram_photo(bot, file_id)
+        logger.info("photo_downloaded", extra={"field": field, "size_bytes": len(raw)})
         compressed = compress_if_needed(
             raw,
             max_bytes=settings.photo_max_bytes,
             longest_edge=settings.photo_compress_target_longest_edge,
         )
+        logger.info("photo_compressed", extra={"field": field, "size_bytes": len(compressed)})
         filename = get_photo_filename(field, session.motor_id)
         url = await frappe.upload_foto(compressed, filename=filename)
         foto_urls[field] = url
+        logger.info("photo_uploaded", extra={"field": field, "url": url})
 
     # Step 3: Build payload (pure)
     payload = build_submit_payload(session, foto_urls)
     idem_key = build_idempotency_key(session)
+    logger.info("submit_calling_frappe", extra={"idempotency_key": idem_key})
 
     # Step 4: Submit with retry — 3× exponential backoff (Requirement 8.10)
     last_exc: FrappeUnavailable | None = None
     for attempt in range(4):  # 1 initial + 3 retries
         try:
-            return await frappe.submit_hasil_inspeksi(payload, idempotency_key=idem_key)
+            logger.info("submit_attempt", extra={"attempt": attempt + 1})
+            result = await frappe.submit_hasil_inspeksi(payload, idempotency_key=idem_key)
+            logger.info("submit_success", extra={"name": result.name})
+            return result
         except FrappeValidationError as e:
+            logger.error("submit_validation_error", extra={"message": e.message, "attempt": attempt + 1})
             if e.indicates_already_completed():  # Requirement 8.9
                 return SubmitResult.synthetic_success_already_completed()
             raise
         except FrappeUnavailable as e:
+            logger.warning("submit_unavailable", extra={"message": str(e), "attempt": attempt + 1})
             last_exc = e
             if attempt < 3:
                 await asyncio.sleep(_BACKOFFS[attempt])
