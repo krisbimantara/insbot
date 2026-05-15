@@ -10,15 +10,18 @@ services:
       - .env
     environment:
       - REDIS_URL=redis://redis:6379/0
+      # Frappe backend accessible via shared frappe_network
+      - FRAPPE_URL=http://backend:8000
     ports:
       - "8443:8443"
+    networks:
+      - default
+      - frappe_network
 
   redis:
     image: redis:7-alpine
     container_name: inspection-bot-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -26,6 +29,14 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    networks:
+      - default
 
 volumes:
   redis-data:
+
+networks:
+  default:
+    driver: bridge
+  frappe_network:
+    external: true

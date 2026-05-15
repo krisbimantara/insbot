@@ -2,10 +2,38 @@
 
 Panduan deploy bot di VPS yang sama dengan container Frappe ERPNext.
 
+## Arsitektur
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  VPS                                                            │
+│                                                                 │
+│  ┌─── frappe_network (bridge) ─────────────────────────────┐   │
+│  │                                                          │   │
+│  │  frappe-docker.yml:                                      │   │
+│  │    frontend (:8080)                                      │   │
+│  │    backend (:8000)  ◄── bot konek ke sini                │   │
+│  │    db, redis-cache, redis-queue, scheduler, etc.         │   │
+│  │                                                          │   │
+│  │  docker-compose.yml (insbot):                            │   │
+│  │    bot (:8443)  ◄── Frappe webhook POST ke sini          │   │
+│  │                                                          │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌─── default network (insbot) ────┐                            │
+│  │  bot ←→ redis (internal)        │                            │
+│  └─────────────────────────────────┘                            │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+Bot terhubung ke dua network:
+- **frappe_network** (external) — agar bisa akses `backend:8000` (Frappe REST API)
+- **default** (internal insbot) — untuk komunikasi bot ↔ Redis sendiri
+
 ## Prasyarat
 
-- VPS sudah menjalankan Frappe/ERPNext via Docker
-- Docker & Docker Compose terinstall
+- VPS sudah menjalankan Frappe/ERPNext via `frappe-docker.yml` dengan network `frappe_network`
+- Docker & Docker Compose v2 terinstall
 - Git terinstall di VPS
 - Akses SSH ke VPS
 
@@ -14,87 +42,89 @@ Panduan deploy bot di VPS yang sama dengan container Frappe ERPNext.
 ```bash
 ssh user@your-vps-ip
 
-# Buat direktori untuk bot (di luar folder Frappe)
 cd /opt
-git clone https://github.com/YOUR_USERNAME/insbot.git
+git clone https://github.com/krisbimantara/insbot.git
 cd insbot
 ```
 
-## Langkah 2: Konfigurasi Environment
+## Langkah 2: Pastikan frappe_network Sudah Ada
 
 ```bash
-# Copy template dan isi nilai yang sesuai
+# Cek network Frappe sudah running
+docker network ls | grep frappe_network
+
+# Jika belum ada (Frappe belum start), start Frappe dulu:
+# cd /path/to/frappe && docker compose -f frappe-docker.yml up -d
+```
+
+> **Penting:** Nama network harus persis `frappe_network`. Jika Frappe compose file-mu
+> menggunakan project name (mis. `myproject_frappe_network`), cek dengan:
+> ```bash
+> docker network ls
+> ```
+> Lalu sesuaikan nama di `docker-compose.yml` bagian `networks.frappe_network.name`.
+
+## Langkah 3: Konfigurasi Environment
+
+```bash
 cp .env.example .env
 nano .env
 ```
 
 Isi nilai berikut:
 
-| Variable | Keterangan |
-|----------|-----------|
-| `FRAPPE_URL` | URL Frappe internal, mis. `http://frappe-web:8069` atau `http://host.docker.internal:8069` jika Frappe di host network |
-| `FRAPPE_API_KEY` | API Key dari User Frappe (User → API Access → Generate Keys) |
-| `FRAPPE_API_SECRET` | API Secret dari User Frappe |
-| `TELEGRAM_BOT_TOKEN` | Token dari @BotFather |
-| `REDIS_URL` | Biarkan default `redis://redis:6379/0` (Redis internal bot) |
-| `WEBHOOK_SHARED_SECRET` | Secret yang sama dengan yang dikonfigurasi di Server Script Frappe |
-| `WEBHOOK_PORT` | Port webhook, default `8443` |
+| Variable | Nilai | Keterangan |
+|----------|-------|-----------|
+| `FRAPPE_URL` | `http://backend:8000` | Nama container Frappe backend di frappe_network |
+| `FRAPPE_API_KEY` | `xxxxxxxx` | API Key dari User Frappe (User → API Access → Generate Keys) |
+| `FRAPPE_API_SECRET` | `xxxxxxxx` | API Secret dari User Frappe |
+| `TELEGRAM_BOT_TOKEN` | `123456:ABC...` | Token dari @BotFather |
+| `REDIS_URL` | `redis://redis:6379/0` | Biarkan default (Redis internal bot) |
+| `WEBHOOK_SHARED_SECRET` | `random_string` | Secret yang sama dengan Server Script Frappe |
+| `WEBHOOK_HOST` | `0.0.0.0` | Biarkan default |
+| `WEBHOOK_PORT` | `8443` | Biarkan default |
 
-### Koneksi ke Frappe di Docker Network yang Sama
+### Catatan tentang FRAPPE_URL
 
-Jika Frappe berjalan di Docker network tertentu (mis. `frappe_network`), tambahkan network tersebut ke `docker-compose.yml` bot:
+Karena bot sudah join `frappe_network`, bot bisa langsung akses container `backend` Frappe:
 
-```yaml
-services:
-  bot:
-    # ... konfigurasi existing ...
-    networks:
-      - default
-      - frappe_network
-
-networks:
-  frappe_network:
-    external: true
+```env
+FRAPPE_URL=http://backend:8000
 ```
 
-Dengan ini, `FRAPPE_URL` bisa menggunakan nama container Frappe langsung, mis:
-```
-FRAPPE_URL=http://frappe-web:8069
-```
+Ini lebih reliable daripada pakai IP host karena langsung lewat Docker DNS internal.
 
-**Alternatif** jika tidak ingin join network Frappe:
-```
-FRAPPE_URL=http://host.docker.internal:8069
-```
-atau gunakan IP internal VPS:
-```
-FRAPPE_URL=http://172.17.0.1:8069
-```
-
-## Langkah 3: Build dan Jalankan
+## Langkah 4: Build dan Jalankan
 
 ```bash
-# Build image dan start containers
 docker compose up -d --build
-
-# Cek status
-docker compose ps
-
-# Cek logs
-docker compose logs -f bot
 ```
 
-## Langkah 4: Verifikasi
-
+Cek status:
 ```bash
-# Test healthz endpoint
+docker compose ps
+```
+
+Output yang diharapkan:
+```
+NAME                    STATUS              PORTS
+inspection-bot          Up (healthy)        0.0.0.0:8443->8443/tcp
+inspection-bot-redis    Up (healthy)        6379/tcp
+```
+
+## Langkah 5: Verifikasi
+
+### Test healthz
+```bash
 curl http://localhost:8443/healthz
 # Expected: {"status":"ok"}
+```
 
-# Test webhook endpoint (dari VPS)
+### Test webhook (simulasi dari Frappe)
+```bash
 curl -X POST http://localhost:8443/webhook/inspection-request \
   -H "Content-Type: application/json" \
-  -H "X-Inspection-Webhook-Secret: YOUR_SECRET" \
+  -H "X-Inspection-Webhook-Secret: YOUR_SECRET_HERE" \
   -d '{
     "event": "inspection_requested",
     "motor_tarikan": "TEST-001",
@@ -106,26 +136,55 @@ curl -X POST http://localhost:8443/webhook/inspection-request \
     "tipe_inspeksi": "Inspeksi",
     "inspector_chat_id": "YOUR_TELEGRAM_ID"
   }'
+# Expected: OK (status 200)
 ```
 
-## Langkah 5: Konfigurasi Frappe Webhook
-
-Di Frappe, buat Server Script atau Webhook yang mengirim POST ke bot saat tombol "Request Inspeksi" ditekan:
-
-```
-URL: http://inspection-bot:8443/webhook/inspection-request
-```
-
-(Gunakan nama container `inspection-bot` jika sudah join network yang sama)
-
-Atau jika bot diakses via port mapping:
-```
-URL: http://localhost:8443/webhook/inspection-request
+### Test koneksi ke Frappe dari container bot
+```bash
+docker exec inspection-bot python -c "
+import asyncio, aiohttp
+async def test():
+    async with aiohttp.ClientSession() as s:
+        r = await s.get('http://backend:8000/api/method/frappe.ping')
+        print(r.status, await r.text())
+asyncio.run(test())
+"
+# Expected: 200 {"message":"pong"}
 ```
 
-## Langkah 6: Expose Webhook ke Internet (Opsional)
+## Langkah 6: Konfigurasi Webhook di Frappe
 
-Jika Frappe berada di server berbeda atau perlu akses dari luar:
+Di Frappe, buat Server Script atau hook yang mengirim POST ke bot saat admin menekan "Request Inspeksi":
+
+**URL webhook (dari dalam Docker network):**
+```
+http://inspection-bot:8443/webhook/inspection-request
+```
+
+**Header yang harus dikirim:**
+```
+Content-Type: application/json
+X-Inspection-Webhook-Secret: <sama dengan WEBHOOK_SHARED_SECRET di .env>
+```
+
+**Body JSON:**
+```json
+{
+  "event": "inspection_requested",
+  "motor_tarikan": "PJ-001",
+  "nopol": "B 1234 XYZ",
+  "merk": "Honda",
+  "model": "Beat",
+  "tahun": "2022",
+  "warna": "Merah",
+  "tipe_inspeksi": "Inspeksi",
+  "inspector_chat_id": "123456789"
+}
+```
+
+## Langkah 7: Expose Webhook ke Internet (Opsional)
+
+Hanya diperlukan jika Frappe berada di server berbeda atau perlu monitoring dari luar.
 
 ### Opsi A: Nginx Reverse Proxy
 
@@ -151,17 +210,16 @@ server {
 }
 ```
 
-### Opsi B: Traefik (jika sudah dipakai Frappe)
+### Opsi B: Hanya internal (recommended)
 
-Tambahkan labels di `docker-compose.yml`:
+Karena Frappe dan bot di VPS yang sama dan sudah share network, tidak perlu expose ke internet. Hapus port mapping di `docker-compose.yml` jika tidak butuh akses dari luar:
 
 ```yaml
 services:
   bot:
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.insbot.rule=Host(`bot.yourdomain.com`)"
-      - "traefik.http.services.insbot.loadbalancer.server.port=8443"
+    # hapus bagian ports jika tidak perlu akses dari luar
+    # ports:
+    #   - "8443:8443"
 ```
 
 ## Maintenance
@@ -177,9 +235,9 @@ docker compose up -d --build
 ### Lihat Logs
 
 ```bash
-docker compose logs -f bot          # Bot logs
-docker compose logs -f redis        # Redis logs
+docker compose logs -f bot          # Bot logs (realtime)
 docker compose logs --tail=100 bot  # Last 100 lines
+docker compose logs -f redis        # Redis logs
 ```
 
 ### Restart
@@ -191,16 +249,18 @@ docker compose restart bot
 ### Stop
 
 ```bash
-docker compose down          # Stop containers
-docker compose down -v       # Stop + hapus volume Redis (data hilang!)
+docker compose down          # Stop containers (data Redis tetap)
+docker compose down -v       # Stop + hapus volume Redis (data session hilang!)
 ```
 
 ## Troubleshooting
 
-| Masalah | Solusi |
-|---------|--------|
-| Bot tidak bisa konek ke Frappe | Cek `FRAPPE_URL`, pastikan network Docker terhubung |
-| Redis connection refused | Pastikan container redis sudah running: `docker compose ps` |
-| Webhook 403 Forbidden | Cek `WEBHOOK_SHARED_SECRET` sama di bot dan Frappe |
-| Bot tidak merespons di Telegram | Cek `TELEGRAM_BOT_TOKEN`, pastikan bot belum di-block user |
-| Container restart loop | Cek logs: `docker compose logs bot`, biasanya env var missing |
+| Masalah | Diagnosa | Solusi |
+|---------|----------|--------|
+| Bot tidak bisa konek ke Frappe | `docker exec inspection-bot curl http://backend:8000` | Pastikan bot join `frappe_network` dan Frappe sudah running |
+| `frappe_network not found` | `docker network ls` | Start Frappe dulu, atau buat manual: `docker network create frappe_network` |
+| Redis connection refused | `docker compose ps` | Pastikan redis container healthy |
+| Webhook 403 Forbidden | Cek header `X-Inspection-Webhook-Secret` | Samakan secret di `.env` dan Server Script Frappe |
+| Bot tidak merespons di Telegram | Cek `TELEGRAM_BOT_TOKEN` | Pastikan token valid, bot belum di-block user |
+| Container restart loop | `docker compose logs bot` | Biasanya env var wajib belum diisi di `.env` |
+| `network frappe_network declared as external, but could not be found` | Frappe belum start | Start Frappe: `docker compose -f frappe-docker.yml up -d` |
