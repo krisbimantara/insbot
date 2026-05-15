@@ -36,3 +36,6 @@ Thumbs.db
 
 # Kiro internal task state
 .kiro/tasks/
+
+# Temporary reference files
+submitdifrappe.py
