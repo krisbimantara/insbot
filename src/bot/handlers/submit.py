@@ -152,9 +152,14 @@ async def handle_kirim_hasil(
 ) -> None:
     """Handle 'Kirim Hasil' callback from the summary page.
 
-    Orchestrates the submission pipeline and maps outcomes to user messages.
+    Launches the submission pipeline as a background task so the inspector
+    can continue working (e.g. start inspecting the next motor) without
+    waiting for the upload+submit to finish (~30-40s).
+
+    The bot will send a notification when the submission completes or fails.
     """
     telegram_id = str(callback.from_user.id)
+    chat_id = callback.from_user.id
     await callback.answer()
 
     # Find active session in SUMMARY phase
@@ -166,102 +171,136 @@ async def handle_kirim_hasil(
             )
         return
 
-    # Show progress message (Requirement 8.5)
-    progress_msg = None
+    # Pre-submit validation (fast, do it synchronously before background)
+    errors = validate_pre_submit(session)
+    if errors:
+        await _handle_pre_submit_error(callback, PreSubmitValidationError(errors))
+        return
+
+    # Immediately reply — inspector can continue working
     if callback.message:
-        progress_msg = await callback.message.answer(  # type: ignore[union-attr]
-            "⏳ Mengirim hasil inspeksi..."
+        await callback.message.answer(  # type: ignore[union-attr]
+            f"⏳ Mengirim hasil inspeksi untuk *{session.motor_meta.nopol}*...\n\n"
+            "Anda bisa melanjutkan ke motor berikutnya. "
+            "Kami akan kabari hasilnya.",
+            parse_mode="Markdown",
         )
 
+    # Launch background task
+    bot = callback.bot
+    asyncio.create_task(
+        _background_submit(
+            session=session,
+            bot=bot,
+            frappe=frappe_client,
+            settings=settings,
+            session_store=session_store,
+            chat_id=chat_id,
+        )
+    )
+
+
+async def _background_submit(
+    *,
+    session: Session,
+    bot,
+    frappe: FrappeClient,
+    settings: Settings,
+    session_store: RedisSessionStore,
+    chat_id: int,
+) -> None:
+    """Run the submission pipeline in the background and notify the user."""
     try:
         result = await _submit_inspection(
             session,
-            bot=callback.bot,
-            frappe=frappe_client,
+            bot=bot,
+            frappe=frappe,
             settings=settings,
         )
-    except PreSubmitValidationError as e:
-        # Requirement 8.2: show missing fields, return to summary
-        await _handle_pre_submit_error(callback, e)
-        await _delete_progress_msg(progress_msg)
-        return
     except (StatusChanged, StatusMismatch):
-        # Requirement 15.2, 15.3: motor reassigned or tipe changed
-        await _handle_status_error(callback, session, session_store)
-        await _delete_progress_msg(progress_msg)
+        await session_store.delete_session(session.telegram_id, session.motor_id)
+        await session_store.remove_pending(session.telegram_id, session.motor_id)
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"⚠️ *Pengiriman gagal — {session.motor_meta.nopol}*\n\n"
+                "Motor sudah dialihkan atau status berubah.\n"
+                "Ketik /mulai untuk melihat daftar motor terbaru."
+            ),
+            parse_mode="Markdown",
+        )
         return
     except FrappeValidationError as e:
-        if e.indicates_payload_incomplete():
-            # Requirement 8.8: payload incomplete → back to summary
-            await _handle_payload_incomplete(callback, e)
-        else:
-            # Other validation error
-            await _handle_generic_validation_error(callback, e)
-        await _delete_progress_msg(progress_msg)
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"❌ *Pengiriman gagal — {session.motor_meta.nopol}*\n\n"
+                f"Server menolak: {e.message}\n\n"
+                "Tekan Kirim Hasil lagi untuk mencoba ulang."
+            ),
+            parse_mode="Markdown",
+        )
         return
     except FrappePermissionError:
-        # Requirement 8.8: 403 → access denied + delete session
-        await _handle_permission_error(callback, session, session_store)
-        await _delete_progress_msg(progress_msg)
+        await session_store.delete_session(session.telegram_id, session.motor_id)
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"🚫 *Akses ditolak — {session.motor_meta.nopol}*\n\n"
+                "Hubungi admin."
+            ),
+            parse_mode="Markdown",
+        )
         return
     except FrappeUnavailable:
-        # Requirement 8.10: all retries exhausted → manual retry message
-        await _handle_unavailable(callback)
-        await _delete_progress_msg(progress_msg)
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"❌ *Gagal mengirim — {session.motor_meta.nopol}*\n\n"
+                "Server tidak merespons setelah beberapa percobaan.\n"
+                "Tekan Kirim Hasil lagi untuk mencoba ulang."
+            ),
+            parse_mode="Markdown",
+        )
+        return
+    except Exception as e:
+        logger.exception("background_submit_unexpected_error")
+        await bot.send_message(
+            chat_id=chat_id,
+            text=(
+                f"❌ *Error tidak terduga — {session.motor_meta.nopol}*\n\n"
+                "Silakan coba lagi atau hubungi admin."
+            ),
+            parse_mode="Markdown",
+        )
         return
 
-    # --- Success path (Requirement 8.6, 8.11) ---
-    await _handle_success(callback, session, result, session_store)
-    await _delete_progress_msg(progress_msg)
-
-
-# ---------------------------------------------------------------------------
-# Outcome handlers
-# ---------------------------------------------------------------------------
-
-
-async def _handle_success(
-    callback: CallbackQuery,
-    session: Session,
-    result: SubmitResult,
-    store: RedisSessionStore,
-) -> None:
-    """Handle successful submission (Requirement 8.6, 8.11).
-
-    - Delete session from Redis
-    - Remove motor from pending set
-    - Show confirmation with doc name + optional [Lihat Daftar Motor]
-    """
-    # Clean up Redis
-    await store.delete_session(session.telegram_id, session.motor_id)
-    await store.remove_pending(session.telegram_id, session.motor_id)
+    # --- Success ---
+    await session_store.delete_session(session.telegram_id, session.motor_id)
+    await session_store.remove_pending(session.telegram_id, session.motor_id)
 
     logger.info(
-        "submit_success",
+        "submit_completed",
         extra={
             "telegram_id": session.telegram_id,
             "motor_id": session.motor_id,
             "doc_name": result.name,
-            "already_completed": result.already_completed,
         },
     )
 
-    # Build confirmation message
     if result.already_completed:
         text = (
-            "✅ *Inspeksi sudah tercatat sebelumnya.*\n\n"
-            f"Motor: {session.motor_meta.nopol}\n"
+            f"✅ *Inspeksi sudah tercatat — {session.motor_meta.nopol}*\n\n"
             "Status: Selesai"
         )
     else:
         doc_name = result.name or "—"
         text = (
-            "✅ *Hasil inspeksi berhasil dikirim!*\n\n"
+            f"✅ *Hasil inspeksi berhasil dikirim!*\n\n"
             f"Motor: {session.motor_meta.nopol}\n"
             f"Dokumen: `{doc_name}`"
         )
 
-    # Optional [Lihat Daftar Motor] button (Requirement 8.11)
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -273,24 +312,27 @@ async def _handle_success(
         ]
     )
 
-    if callback.message:
-        await callback.message.answer(  # type: ignore[union-attr]
-            text, parse_mode="Markdown", reply_markup=keyboard
-        )
+    await bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        parse_mode="Markdown",
+        reply_markup=keyboard,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
 async def _handle_pre_submit_error(
     callback: CallbackQuery,
     error: PreSubmitValidationError,
 ) -> None:
-    """Handle pre-submit validation failure (Requirement 8.2).
-
-    Show missing fields and return to summary.
-    """
-    # Build list of missing fields (max 10 shown to avoid message overflow)
+    """Handle pre-submit validation failure (Requirement 8.2)."""
     field_lines = []
     for err in error.errors[:10]:
-        field_lines.append(f"• {err.field}: {err.message}")
+        field_lines.append(f"• {err.field}: {err.reason}")
     if len(error.errors) > 10:
         field_lines.append(f"... dan {len(error.errors) - 10} lainnya")
 
@@ -303,97 +345,6 @@ async def _handle_pre_submit_error(
 
     if callback.message:
         await callback.message.answer(text, parse_mode="Markdown")  # type: ignore[union-attr]
-
-
-async def _handle_status_error(
-    callback: CallbackQuery,
-    session: Session,
-    store: RedisSessionStore,
-) -> None:
-    """Handle StatusChanged / StatusMismatch (Requirement 15.2, 15.3).
-
-    Inform inspector that the motor has been reassigned and delete the session.
-    """
-    # Delete stale session
-    await store.delete_session(session.telegram_id, session.motor_id)
-    await store.remove_pending(session.telegram_id, session.motor_id)
-
-    text = (
-        "⚠️ *Motor sudah dialihkan*\n\n"
-        f"Motor {session.motor_meta.nopol} sudah tidak tersedia atau "
-        "status inspeksi telah berubah.\n\n"
-        "Ketik /mulai untuk melihat daftar motor terbaru."
-    )
-
-    if callback.message:
-        await callback.message.answer(text, parse_mode="Markdown")  # type: ignore[union-attr]
-
-
-async def _handle_payload_incomplete(
-    callback: CallbackQuery,
-    error: FrappeValidationError,
-) -> None:
-    """Handle Frappe ValidationError indicating payload incomplete (Requirement 8.8).
-
-    Show error and return to summary.
-    """
-    text = (
-        "❌ *Payload tidak lengkap*\n\n"
-        f"Server menolak: {error.message}\n\n"
-        "Silakan periksa kembali data inspeksi."
-    )
-
-    if callback.message:
-        await callback.message.answer(text, parse_mode="Markdown")  # type: ignore[union-attr]
-
-
-async def _handle_generic_validation_error(
-    callback: CallbackQuery,
-    error: FrappeValidationError,
-) -> None:
-    """Handle other FrappeValidationError cases."""
-    text = (
-        "❌ *Gagal mengirim*\n\n"
-        f"Server menolak: {error.message}\n\n"
-        "Silakan hubungi admin jika masalah berlanjut."
-    )
-
-    if callback.message:
-        await callback.message.answer(text, parse_mode="Markdown")  # type: ignore[union-attr]
-
-
-async def _handle_permission_error(
-    callback: CallbackQuery,
-    session: Session,
-    store: RedisSessionStore,
-) -> None:
-    """Handle FrappePermissionError / 403 (Requirement 15.3).
-
-    Delete session and show access denied message.
-    Requirement 15.3: "Akses ditolak untuk motor ini. Hubungi admin."
-    """
-    await store.delete_session(session.telegram_id, session.motor_id)
-
-    text = "🚫 *Akses ditolak untuk motor ini.*\n\nHubungi admin."
-
-    if callback.message:
-        await callback.message.answer(text, parse_mode="Markdown")  # type: ignore[union-attr]
-
-
-async def _handle_unavailable(callback: CallbackQuery) -> None:
-    """Handle FrappeUnavailable after all retries exhausted (Requirement 8.10).
-
-    Show manual retry message.
-    """
-    text = "❌ Gagal mengirim ke server. Tekan Kirim Hasil lagi untuk mencoba ulang."
-
-    if callback.message:
-        await callback.message.answer(text)  # type: ignore[union-attr]
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 
 async def _find_summary_session(
@@ -420,13 +371,3 @@ async def _find_summary_session(
         if session is not None and session.phase == Phase.SUMMARY:
             return session
     return None
-
-
-async def _delete_progress_msg(msg) -> None:
-    """Attempt to delete the progress message; ignore errors."""
-    if msg is None:
-        return
-    try:
-        await msg.delete()
-    except Exception:
-        pass
