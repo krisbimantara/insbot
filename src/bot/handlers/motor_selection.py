@@ -145,6 +145,42 @@ async def show_motor_list(
     )
 
 
+async def show_motor_list_excluding(
+    callback_or_message,
+    telegram_id: str,
+    frappe: FrappeClient,
+    store: RedisSessionStore,
+    *,
+    exclude_motor: str,
+) -> None:
+    """Same as show_motor_list but excludes a specific motor from the display.
+
+    Used after submit to hide the motor currently being sent to Frappe.
+    """
+    try:
+        motors = await frappe.get_pending_list(telegram_id)
+    except FrappeUnavailable:
+        await _send_text(callback_or_message, "Sistem sedang sibuk, silakan coba lagi sebentar.")
+        return
+
+    # Filter out the excluded motor
+    motors = [m for m in motors if m.name != exclude_motor]
+
+    motor_ids = [m.name for m in motors]
+    await store.replace_pending(telegram_id, motor_ids)
+
+    if not motors:
+        await _send_text(callback_or_message, "Tidak ada tugas inspeksi lain yang tersisa.")
+        return
+
+    keyboard = _build_motor_list_keyboard(motors)
+    await _send_text(
+        callback_or_message,
+        "📋 Daftar Motor Pending\n\nPilih motor untuk diinspeksi:",
+        reply_markup=keyboard,
+    )
+
+
 async def _send_text(target, text: str, **kwargs) -> None:
     """Send text to either a CallbackQuery or Message target."""
     from aiogram.types import Message
@@ -355,6 +391,9 @@ async def handle_lanjutkan_sesi(
         elif session.phase == Phase.SUMMARY:
             from bot.handlers.summary import send_summary
             await send_summary(callback, session)
+        elif session.phase == Phase.REVISION:
+            from bot.handlers.summary import _send_revision_question
+            await _send_revision_question(callback, session)
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith(CB_MULAI_ULANG))

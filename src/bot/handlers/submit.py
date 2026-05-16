@@ -190,9 +190,9 @@ async def handle_kirim_hasil(
             "Anda bisa melanjutkan ke motor berikutnya (jika ada).",
         )
 
-    # Auto-show motor list so inspector can continue immediately
-    from bot.handlers.motor_selection import show_motor_list
-    await show_motor_list(callback, telegram_id, frappe_client, session_store)
+    # Auto-show motor list (exclude the motor being submitted)
+    from bot.handlers.motor_selection import show_motor_list_excluding
+    await show_motor_list_excluding(callback, telegram_id, frappe_client, session_store, exclude_motor=session.motor_id)
 
     # Launch background task
     bot = callback.bot
